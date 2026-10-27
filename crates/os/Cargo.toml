@@ -9,7 +9,6 @@ uefi = { workspace = true, features = [
     "alloc",
     "global_allocator",
     "logger",
-    "panic_handler",
 ] }
 wm = { path = "../wm" }
 shell = { path = "../shell" }

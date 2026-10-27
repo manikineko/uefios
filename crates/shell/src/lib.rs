@@ -3,9 +3,8 @@
 //! The uefios shell.
 //!
 //! This crate is deliberately target-agnostic (`no_std` + `alloc` only) so the
-//! parser and builtins can be unit-tested on the host. The `os` crate owns the
-//! REPL loop: read keys via the UEFI console protocols, feed lines here, and
-//! dispatch.
+//! parser, builtins, and the `Shell` REPL can be unit-tested on the host. The
+//! `os` crate owns the terminal window and event loop.
 //!
 //! Long-term direction: a POSIX-ish command environment with FreeBSD-derived
 //! userland (`sh`/Almquist shell, coreutils) over a libc shim — see
@@ -13,8 +12,9 @@
 
 extern crate alloc;
 
-use alloc::string::String;
+use alloc::string::{String, ToString};
 use alloc::vec::Vec;
+use alloc::format;
 
 /// A whitespace-tokenized command line.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -30,9 +30,6 @@ impl Parsed {
 }
 
 /// Tokenize `line` on whitespace. Returns `None` for empty input.
-///
-/// Phase 1 keeps this deliberately dumb — no quoting, globbing, pipes, or
-/// escapes. Those arrive with the real `sh` port.
 pub fn parse(line: &str) -> Option<Parsed> {
     let argv: Vec<String> = line.split_whitespace().map(String::from).collect();
     if argv.is_empty() {
@@ -66,6 +63,142 @@ pub fn builtin(name: &str) -> Option<Builtin> {
     })
 }
 
+/// Keys the REPL understands, translated by the caller from raw input.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShellKey {
+    Char(char),
+    Enter,
+    Backspace,
+    HistoryUp,
+    HistoryDown,
+}
+
+/// Side effects the caller must perform on the shell's behalf.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShellAction {
+    None,
+    Clear,
+    Reboot,
+}
+
+/// Stateful shell: scrollback + edit line + history.
+pub struct Shell {
+    /// Completed output lines (scrollback).
+    pub out: Vec<String>,
+    /// Current input line being edited.
+    pub line: String,
+    history: Vec<String>,
+    hidx: Option<usize>,
+    env_info: String,
+    /// Bumped whenever visible state changes — the terminal repaints on change.
+    pub revision: u64,
+}
+
+impl Shell {
+    pub fn new(env_info: String) -> Self {
+        let mut s = Self {
+            out: Vec::new(),
+            line: String::new(),
+            history: Vec::new(),
+            hidx: None,
+            env_info,
+            revision: 0,
+        };
+        s.print(&format!(
+            "uefios {} -- type 'help' for commands",
+            env!("CARGO_PKG_VERSION")
+        ));
+        s
+    }
+
+    /// Feed one key; returns any side-effect the caller must perform.
+    pub fn feed(&mut self, key: ShellKey) -> ShellAction {
+        self.revision += 1;
+        match key {
+            ShellKey::Char(c) => {
+                self.hidx = None;
+                self.line.push(c);
+            }
+            ShellKey::Backspace => {
+                self.hidx = None;
+                self.line.pop();
+            }
+            ShellKey::HistoryUp => {
+                let n = self.history.len();
+                if n > 0 {
+                    let i = self.hidx.map_or(n - 1, |i| i.saturating_sub(1));
+                    self.hidx = Some(i);
+                    self.line = self.history[i].clone();
+                }
+            }
+            ShellKey::HistoryDown => match self.hidx {
+                Some(i) if i + 1 < self.history.len() => {
+                    self.hidx = Some(i + 1);
+                    self.line = self.history[i + 1].clone();
+                }
+                _ => {
+                    self.hidx = None;
+                    self.line.clear();
+                }
+            },
+            ShellKey::Enter => {
+                let line = core::mem::take(&mut self.line);
+                self.hidx = None;
+                self.print(&format!("> {}", line));
+                if !line.trim().is_empty() {
+                    self.history.push(line.clone());
+                    return self.exec(&line);
+                }
+            }
+        }
+        ShellAction::None
+    }
+
+    fn print(&mut self, s: &str) {
+        for l in s.split('\n') {
+            self.out.push(l.to_string());
+        }
+    }
+
+    /// Lines to display: scrollback tail + the live prompt line.
+    pub fn render(&self, rows: usize, dst: &mut Vec<String>) {
+        dst.clear();
+        let start = self.out.len().saturating_sub(rows.saturating_sub(1));
+        dst.extend(self.out[start..].iter().cloned());
+        dst.push(format!("> {}\u{2588}", self.line));
+        while dst.len() > rows {
+            dst.remove(0);
+        }
+    }
+
+    fn exec(&mut self, line: &str) -> ShellAction {
+        let Some(parsed) = parse(line) else { return ShellAction::None };
+        let name = parsed.name().unwrap_or("");
+        match builtin(name) {
+            Some(Builtin::Help) => self.print(
+                "commands: help ? ver uname clear efiinfo echo exit\n\
+                 built-ins only for now -- userland lands in phase 4",
+            ),
+            Some(Builtin::Version) => self.print(&format!(
+                "uefios {} (kernelless, UEFI boot services)",
+                env!("CARGO_PKG_VERSION")
+            )),
+            Some(Builtin::Uname) => self.print("uefios x86_64 uefi"),
+            Some(Builtin::EfiInfo) => self.print(&self.env_info.clone()),
+            Some(Builtin::Clear) => return ShellAction::Clear,
+            Some(Builtin::Exit) => {
+                self.print("(the shell runs inside a window -- close it with the X button)")
+            }
+            None if name == "echo" => {
+                let text = parsed.argv[1..].join(" ");
+                self.print(&text);
+            }
+            None => self.print(&format!("{}: command not found", name)),
+        }
+        ShellAction::None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -88,5 +221,37 @@ mod tests {
         assert_eq!(builtin("uname"), Some(Builtin::Uname));
         assert_eq!(builtin("?"), Some(Builtin::Help));
         assert_eq!(builtin("definitely-not-a-command"), None);
+    }
+
+    #[test]
+    fn shell_runs_commands() {
+        let mut s = Shell::new("fw".into());
+        for c in "uname".chars() {
+            s.feed(ShellKey::Char(c));
+        }
+        s.feed(ShellKey::Enter);
+        assert!(s.out.iter().any(|l| l.contains("uefios x86_64")));
+    }
+
+    #[test]
+    fn shell_history_recall() {
+        let mut s = Shell::new("fw".into());
+        for c in "ver".chars() {
+            s.feed(ShellKey::Char(c));
+        }
+        s.feed(ShellKey::Enter);
+        s.feed(ShellKey::HistoryUp);
+        assert_eq!(s.line, "ver");
+        s.feed(ShellKey::HistoryDown);
+        assert_eq!(s.line, "");
+    }
+
+    #[test]
+    fn shell_clear_action() {
+        let mut s = Shell::new("fw".into());
+        for c in "clear".chars() {
+            s.feed(ShellKey::Char(c));
+        }
+        assert_eq!(s.feed(ShellKey::Enter), ShellAction::Clear);
     }
 }

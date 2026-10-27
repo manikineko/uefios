@@ -6,3 +6,4 @@ description = "uefios window manager / compositor over the GOP framebuffer"
 
 [dependencies]
 uefi = { workspace = true }
+font8x8 = { version = "0.3.1", default-features = false, features = ["unicode"] }
