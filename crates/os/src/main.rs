@@ -149,6 +149,13 @@ fn main() -> Status {
     comp.add_window(about);
     comp.focus(term_idx(&comp).unwrap());
 
+    // Smoke-test: run `uname` through the real feed->render pipeline so the
+    // terminal proves itself even without hardware input.
+    for c in "uname".chars() {
+        shell.feed(ShellKey::Char(c));
+    }
+    shell.feed(ShellKey::Enter);
+
     let mut last_term_rev = 0u64;
     let mut prev_held = false;
     let mut nkeys = 0u32;

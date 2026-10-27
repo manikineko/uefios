@@ -27,3 +27,17 @@
 - `shell` and `hv` stay free of `uefi` deps so they can be host-tested
 - Design decisions and milestone order live in docs/ — update ROADMAP.md when
   a phase completes
+
+## Post-scaffold additions (session 2)
+
+- wm: Compositor (dirty-rect, direct-fb writes + blt fallback), Window
+  chrome, font8x8 (unicode feature required), cursor bitmap,
+  AbsolutePointer FFI (field MUST be inline UnsafeCell<Raw>, not *mut).
+- shell: stateful REPL, revision-bump repaint model.
+- os: event loop; input via GetProtocol (never exclusive — deadlocks
+  OVMF); window `id` field for routing (focus() reorders windows[]).
+- qemu-mon.py: monitor client (shot/type/move/click). NOTE: sendkey/
+  mouse_move do NOT reach guest under headless -vnc without client —
+  use QMP input-send-event or a real VNC client to verify input.
+- userland/freebsd-src: sparse clone of freebsd bin/sh; PORTING.md
+  documents the no-fork port design (LoadImage/StartImage process model).
