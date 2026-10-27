@@ -1,0 +1,7 @@
+[package]
+name = "hv"
+version = "0.1.0"
+edition = "2021"
+description = "uefios type-1 hypervisor (Intel VT-x first, AMD-V planned)"
+
+[dependencies]

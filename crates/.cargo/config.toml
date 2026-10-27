@@ -1,0 +1,5 @@
+# Default build target: a UEFI application produces a PE/COFF .efi binary.
+# Note: `cargo test` must be run for the host target explicitly, e.g.
+#   cargo test --target x86_64-pc-windows-msvc
+[build]
+target = "x86_64-unknown-uefi"

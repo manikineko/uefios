@@ -1,0 +1,16 @@
+[package]
+name = "os"
+version = "0.1.0"
+edition = "2021"
+description = "uefios kernel — a kernelless operating system running on UEFI boot services"
+
+[dependencies]
+uefi = { workspace = true, features = [
+    "alloc",
+    "global_allocator",
+    "logger",
+    "panic_handler",
+] }
+wm = { path = "../wm" }
+shell = { path = "../shell" }
+hv = { path = "../hv" }

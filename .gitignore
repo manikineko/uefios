@@ -1,0 +1,8 @@
+/target
+**/target/
+*.efi
+!esp/**/.gitkeep
+*.img
+*.fd
+*.ppm
+*.log
