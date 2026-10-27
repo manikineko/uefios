@@ -151,6 +151,8 @@ fn main() -> Status {
 
     let mut last_term_rev = 0u64;
     let mut prev_held = false;
+    let mut nkeys = 0u32;
+    let mut last_pos = Point { x: 0, y: 0 };
 
     // --- Main loop ------------------------------------------------------------
     loop {
@@ -174,6 +176,7 @@ fn main() -> Status {
             }
             v
         });
+        nkeys += keys.len() as u32;
         for sk in keys {
             if comp.focused() == term_idx(&comp) && term_idx(&comp).is_some() {
                 match shell.feed(sk) {
@@ -189,6 +192,7 @@ fn main() -> Status {
         // Pointer.
         if let Some(pd) = pdev.as_mut() {
             if let Some((pos, held)) = pd.poll() {
+                last_pos = pos;
                 comp.mouse_move(pos);
                 if held && !prev_held {
                     let _ = comp.mouse_down(pos);
@@ -197,6 +201,7 @@ fn main() -> Status {
                 }
                 prev_held = held;
             }
+            comp.set_status(alloc::format!("k={} p={},{} h={}", nkeys, last_pos.x, last_pos.y, prev_held as u8));
         }
 
         if shell.revision != last_term_rev {

@@ -66,6 +66,8 @@ pub struct Compositor {
     fb: *mut u8,
     fb_stride: usize,
     fmt: Fmt,
+    /// Free-text shown right-aligned in the taskbar (status/debug).
+    pub status: String,
 }
 
 impl Compositor {
@@ -102,6 +104,7 @@ impl Compositor {
             fb,
             fb_stride: stride,
             fmt,
+            status: String::new(),
         }
     }
 
@@ -114,6 +117,13 @@ impl Compositor {
             Fmt::BltOnly => 3,
         };
         (self.fb as usize, self.fb_stride, tag)
+    }
+
+    pub fn set_status(&mut self, s: String) {
+        if s != self.status {
+            self.status = s;
+            self.damage(self.taskbar);
+        }
     }
 
     /// Mark a screen rect for repainting.
@@ -374,6 +384,10 @@ impl Compositor {
             let mut label = String::from("  |  ");
             label.push_str(&self.windows[i].title);
             draw_text(&mut self.back, 8 + 8 * 7 * 2, (self.taskbar.y + 8) as usize, &label, TERMINAL_FG, 2);
+        }
+        if !self.status.is_empty() {
+            let w = crate::font::text_width(self.status.chars().count(), 1) as i32;
+            draw_text(&mut self.back, (self.screen.w - w - 8) as usize, (self.taskbar.y + 9) as usize, &self.status, TERMINAL_FG, 1);
         }
     }
 }
