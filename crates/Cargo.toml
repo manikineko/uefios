@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
-members = ["os", "wm", "shell", "hv"]
+members = ["os", "wm", "shell",
+    "hello", "hv"]
 
 [workspace.dependencies]
 uefi = "0.35"

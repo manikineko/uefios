@@ -52,3 +52,14 @@ demo desktop via GOP.
 - Networking: SNP stack or a ported stack
 - Guest tooling: images, config files, snapshotting
 - Hardening: memory hygiene around firmware calls, watchdog recovery
+
+## Session 3 status
+
+DONE: File manager window browses fs0: via SimpleFS (dirs first, sel
+highlight, Enter opens dir / queues .efi launch, Backspace up a dir).
+DONE: App-loader "container v0" — launch .efi via LoadImage/StartImage;
+guest shares ConIn/ConOut/GOP and host resumes on exit (hello crate
+staged at esp/TOOLS/HELLO.EFI proves the path).
+TODO next: wire keyboard to FM focus (sendkey needs real VNC/QMP),
+streaming pipes between child apps, real VT-x in hv/, libc-uefi shim
+for bin/sh.

@@ -11,13 +11,21 @@ use uefi::proto::console::gop::GraphicsOutput;
 use uefi::proto::console::pointer::Pointer;
 use uefi::proto::console::text::{Key, ScanCode};
 use uefi::{boot, println, system};
+use uefi::proto::media::fs::SimpleFileSystem;
 use wm::input::PointerDev;
-use wm::{AbsolutePointer, Compositor, Point, Window};
+use wm::{AbsolutePointer, Compositor, Point, Rect, Window};
+
+mod fileman;
+use fileman::FileManager;
 
 const TERM_ID: usize = 0;
+const FM_ID: usize = 1;
 
 fn term_idx(comp: &Compositor) -> Option<usize> {
     comp.windows.iter().position(|w| w.id == TERM_ID)
+}
+fn fm_idx(comp: &Compositor) -> Option<usize> {
+    comp.windows.iter().position(|w| w.id == FM_ID)
 }
 const PAD: usize = 6;
 
@@ -48,6 +56,32 @@ fn paint_about(win: &mut Window) {
     }
     wm::font::draw_text(s, 16, 16, "uefios", wm::surface::WHITE, 3);
     wm::font::draw_text(s, 16, 16 + 8 * 3 + 8, "kernelless OS on UEFI", wm::surface::WHITE, 1);
+    win.content_revision += 1;
+}
+
+/// Paint the file-manager window: path bar, entry list, status line.
+fn render_fm(win: &mut Window, fm: &FileManager) {
+    let s = &mut win.content;
+    s.clear(wm::surface::TERMINAL_BG);
+    wm::font::draw_text(s, PAD, PAD, &fm.path_str(), wm::surface::rgb(0x9a, 0xa0, 0xff), 1);
+    let rowh = wm::font::CELL_H + 4;
+    let vis = (s.height.saturating_sub(PAD * 2 + 26)) / rowh;
+    for (i, e) in fm.entries.iter().enumerate().take(vis) {
+        let y = PAD + 14 + i * rowh;
+        let label = if e.is_dir {
+            alloc::format!("[D] {}", e.name)
+        } else {
+            alloc::format!("    {}", e.name)
+        };
+        if i == fm.sel {
+            s.fill_rect(Rect::new(4, y as i32 - 2, s.width as i32 - 8, rowh as i32),
+                        wm::surface::rgb(0x40, 0x44, 0x7c));
+            wm::font::draw_text(s, PAD, y, &label, wm::surface::WHITE, 1);
+        } else {
+            wm::font::draw_text(s, PAD, y, &label, wm::surface::TERMINAL_FG, 1);
+        }
+    }
+    wm::font::draw_text(s, PAD, s.height - 16, &fm.msg, wm::surface::rgb(0x88, 0x88, 0x99), 1);
     win.content_revision += 1;
 }
 
@@ -147,6 +181,25 @@ fn main() -> Status {
     let mut about = Window::new("about uefios", sw as i32 - 420, 120, 360, 160);
     paint_about(&mut about);
     comp.add_window(about);
+
+    // File manager: browse the ESP, launch .efi images (app loader v0).
+    let mut fm = boot::get_handle_for_protocol::<SimpleFileSystem>()
+        .and_then(|h| unsafe {
+            boot::open_protocol::<SimpleFileSystem>(
+                boot::OpenProtocolParams { handle: h, agent: ih, controller: None },
+                boot::OpenProtocolAttributes::GetProtocol,
+            )
+        })
+        .ok()
+        .map(uefi::fs::FileSystem::new)
+        .map(FileManager::new);
+    if let Some(f) = fm.as_mut() {
+        let mut w = Window::new("file manager", sw as i32 - 640, 480, 560, 280);
+        w.id = FM_ID;
+        render_fm(&mut w, f);
+        comp.add_window(w);
+    }
+
     comp.focus(term_idx(&comp).unwrap());
 
     // Smoke-test: run `uname` through the real feed->render pipeline so the
@@ -157,6 +210,7 @@ fn main() -> Status {
     shell.feed(ShellKey::Enter);
 
     let mut last_term_rev = 0u64;
+    let mut last_fm_rev = 0u64;
     let mut prev_held = false;
     let mut nkeys = 0u32;
     let mut last_pos = Point { x: 0, y: 0 };
@@ -184,15 +238,27 @@ fn main() -> Status {
             v
         });
         nkeys += keys.len() as u32;
+        let fid = comp.focused().map(|i| comp.windows[i].id);
         for sk in keys {
-            if comp.focused() == term_idx(&comp) && term_idx(&comp).is_some() {
-                match shell.feed(sk) {
+            match fid {
+                Some(TERM_ID) => match shell.feed(sk) {
                     ShellAction::Clear => shell.out.clear(),
                     ShellAction::Reboot => {
                         uefi::runtime::reset(uefi::runtime::ResetType::COLD, Status::SUCCESS, None)
                     }
                     _ => {}
+                },
+                Some(FM_ID) => {
+                    if let Some(f) = fm.as_mut() {
+                        f.feed(sk);
+                    }
                 }
+                _ => {}
+            }
+        }
+        if let Some(f) = fm.as_mut() {
+            if f.pending_launch.is_some() {
+                f.launch_pending();
             }
         }
 
@@ -217,6 +283,16 @@ fn main() -> Status {
                 last_term_rev = shell.revision;
                 let cr = comp.windows[ti].client_rect();
                 comp.damage(cr);
+            }
+        }
+        if let Some(f) = fm.as_mut() {
+            if f.revision != last_fm_rev {
+                if let Some(i) = fm_idx(&comp) {
+                    render_fm(&mut comp.windows[i], f);
+                    last_fm_rev = f.revision;
+                    let cr = comp.windows[i].client_rect();
+                    comp.damage(cr);
+                }
             }
         }
 

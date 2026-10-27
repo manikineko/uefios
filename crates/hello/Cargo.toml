@@ -1,0 +1,8 @@
+[package]
+name = "hello"
+version = "0.1.0"
+edition = "2021"
+description = "Guest test app — launched by uefios via LoadImage/StartImage"
+
+[dependencies]
+uefi = { workspace = true, features = ["alloc", "global_allocator", "logger", ] }
