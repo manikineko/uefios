@@ -30,6 +30,7 @@ pub mod asm;
 pub mod vmcs;
 pub mod ept;
 pub mod cpu;
+pub mod host;
 
 /// CPU virtualization features as reported by CPUID/MSRs.
 pub struct Caps {
