@@ -63,3 +63,16 @@ staged at esp/TOOLS/HELLO.EFI proves the path).
 TODO next: wire keyboard to FM focus (sendkey needs real VNC/QMP),
 streaming pipes between child apps, real VT-x in hv/, libc-uefi shim
 for bin/sh.
+
+## Session 4 status
+
+DONE: Containers (forged SystemTable -> guest .efi renders in WM window).
+DONE: Input end-to-end (virtio-kbd/tablet + QMP input-send-event).
+DONE: hv scaffold — VT-x insn layer, host VMXON/VMCS init, guest fields,
+EPT identity map, VMExit handler skeleton (MiniVisor MIT model).
+
+IMPORTANT: VMX bring-up is untestable on this Windows/QEMU-TCG host —
+TCG doesn't emulate VT-x. Needs a real VT-x machine or Linux/KVM host
+(`-cpu host,accel=kvm`). All hv code is compile-checked only so far.
+Next on hv: asm VMExit entry stub (save GPRs -> handle_vmexit -> resume),
+full guest segment/MSR fill, MSR bitmap, per-container ConIn queues.
