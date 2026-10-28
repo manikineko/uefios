@@ -41,3 +41,37 @@ pub fn vmcs_size() -> u64 {
     };
     (basic >> 32) & 0x1fff
 }
+
+use crate::asm;
+
+/// Set IA32_FEATURE_CONTROL lock + VMXON-enable bit if not already set.
+pub fn ensure_feature_control() -> bool {
+    let mut fc = rdmsr(0x3a);
+    if fc & 1 == 0 {
+        fc |= 1 | (1 << 2);
+        wrmsr(0x3a, fc);
+    }
+    fc & (1 << 2) != 0
+}
+
+fn rdmsr(msr: u32) -> u64 {
+    let lo: u32; let hi: u32;
+    unsafe { core::arch::asm!("rdmsr", in("ecx") msr, out("eax") lo, out("edx") hi) };
+    ((hi as u64) << 32) | lo as u64
+}
+fn wrmsr(msr: u32, v: u64) {
+    unsafe {
+        core::arch::asm!("wrmsr", in("ecx") msr, in("eax") v as u32, in("edx") (v >> 32) as u32)
+    }
+}
+
+/// One-time VMXON for this CPU. `region` must be a 4 KiB-aligned
+/// VmxRegion whose revision_id came from IA32_VMX_BASIC.
+pub fn vmxon(region_pa: u64) -> bool {
+    ensure_feature_control() && unsafe { asm::vmxon(region_pa).is_ok() }
+}
+
+/// Load a VMCS region for editing.
+pub fn vmcs_load(vmcs_pa: u64) -> bool {
+    unsafe { asm::vmclear(vmcs_pa).is_ok() && asm::vmptrld(vmcs_pa).is_ok() }
+}

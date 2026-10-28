@@ -26,6 +26,7 @@
 #![no_std]
 extern crate alloc;
 
+pub mod asm;
 pub mod vmcs;
 pub mod ept;
 pub mod cpu;
