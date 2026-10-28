@@ -32,8 +32,10 @@ use wm::{AbsolutePointer, Compositor, Point, Rect, Window};
 
 
 
+mod container;
 mod fileman;
 
+use container::Container;
 use fileman::FileManager;
 
 
@@ -41,6 +43,7 @@ use fileman::FileManager;
 const TERM_ID: usize = 0;
 
 const FM_ID: usize = 1;
+const CONT_ID_BASE: usize = 100;
 
 
 
@@ -119,6 +122,38 @@ fn paint_about(win: &mut Window) {
 }
 
 
+
+/// Paint a guest container's 80x25 console buffer + exit status.
+fn render_container(win: &mut Window, c: &Container) {
+    let s = &mut win.content;
+    s.clear(wm::surface::TERMINAL_BG);
+    for row in 0..container::ROWS {
+        for col in 0..container::COLS {
+            let ch = c.cells[row * container::COLS + col] as u8;
+            if ch != 0x20 && ch != 0 {
+                wm::font::draw_glyph(
+                    s,
+                    col * 8,
+                    row * 8,
+                    ch as char,
+                    wm::surface::TERMINAL_FG,
+                    1,
+                );
+            }
+        }
+    }
+    if c.done {
+        wm::font::draw_text(
+            s,
+            4,
+            s.height - 14,
+            &c.status,
+            wm::surface::rgb(0x88, 0x88, 0x99),
+            1,
+        );
+    }
+    win.content_revision += 1;
+}
 
 /// Paint the file-manager window: path bar, entry list, status line.
 
@@ -424,7 +459,11 @@ fn main() -> Status {
 
     let mut last_fm_rev = 0u64;
 
+    let mut containers: Vec<(&'static mut Container, usize, u64)> = Vec::new();
+
     let mut prev_held = false;
+
+    let mut mdowns = 0u32;
 
     let mut nkeys = 0u32;
 
@@ -516,9 +555,42 @@ fn main() -> Status {
 
         if let Some(f) = fm.as_mut() {
 
-            if f.pending_launch.is_some() {
+            if let Some(path) = f.take_launch() {
 
-                f.launch_pending();
+                if let Some(bytes) = f.read_file(&path) {
+
+                    let c = container::spawn();
+
+                    let n = containers.len();
+
+                    let mut w = Window::new(
+
+                        "guest",
+
+                        120 + (n as i32 % 4) * 30,
+
+                        60 + (n as i32 % 4) * 30,
+
+                        (container::COLS * 8 + 12) as i32,
+
+                        (container::ROWS * 8 + 24) as i32,
+
+                    );
+
+                    let wid = CONT_ID_BASE + n;
+                    w.id = wid;
+
+                    c.origin = (w.client_rect().x, w.client_rect().y);
+
+                    comp.add_window(w);
+
+                    comp.focus(comp.windows.len() - 1);
+
+                    container::run(&bytes, c);
+
+                    containers.push((c, wid, 0u64));
+
+                }
 
             }
 
@@ -538,6 +610,8 @@ fn main() -> Status {
 
                 if held && !prev_held {
 
+                    mdowns += 1;
+
                     let _ = comp.mouse_down(pos);
 
                 } else if !held && prev_held {
@@ -550,7 +624,7 @@ fn main() -> Status {
 
             }
 
-            comp.set_status(alloc::format!("k={} p={},{} h={}", nkeys, last_pos.x, last_pos.y, prev_held as u8));
+            comp.set_status(alloc::format!("k={} p={},{} h={} md={}", nkeys, last_pos.x, last_pos.y, prev_held as u8, mdowns));
 
         }
 
@@ -593,6 +667,17 @@ fn main() -> Status {
         }
 
 
+
+        for (c, wid, lr) in containers.iter_mut() {
+            if c.revision != *lr {
+                if let Some(i) = comp.windows.iter().position(|w| w.id == *wid) {
+                    render_container(&mut comp.windows[i], c);
+                    *lr = c.revision;
+                    let cr = comp.windows[i].client_rect();
+                    comp.damage(cr);
+                }
+            }
+        }
 
         comp.composite(&mut gop);
 

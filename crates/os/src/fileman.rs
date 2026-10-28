@@ -131,34 +131,14 @@ impl FileManager {
         }
     }
 
-    /// Launch the pending .efi path — blocks in StartImage until it exits.
-    /// Caller passes the current image handle.
-    pub fn launch_pending(&mut self) {
-        if let Some(path) = self.pending_launch.take() {
-            let s = path.strip_prefix("fs0:").unwrap_or(&path).to_string();
-            let c = match CString16::try_from(s.as_str()) {
-                Ok(c) => c,
-                Err(_) => { self.msg = "bad path".into(); self.revision += 1; return; }
-            };
-            match self.fs.read(PathBuf::from(&*c)) {
-                Ok(img) => {
-                    let ih = boot::image_handle();
-                    match boot::load_image(
-                        ih,
-                        boot::LoadImageSource::FromBuffer { buffer: &img, file_path: None },
-                    ) {
-                        Ok(child) => {
-                            let st = boot::start_image(child)
-                                .map(|_| uefi::Status::SUCCESS)
-                                .unwrap_or_else(|e| e.status());
-                            self.msg = alloc::format!("child exited: {:?}", st);
-                        }
-                        Err(e) => self.msg = alloc::format!("LoadImage: {:?}", e.status()),
-                    }
-                }
-                Err(e) => self.msg = alloc::format!("read: {:?}", e),
-            }
-            self.reload();
-        }
+    /// Bytes of the pending .efi file, if it reads cleanly.
+    pub fn read_file(&mut self, full: &str) -> Option<Vec<u8>> {
+        let s = full.strip_prefix("fs0:").unwrap_or(full);
+        let c = CString16::try_from(s).ok()?;
+        self.fs.read(PathBuf::from(&*c)).ok()
+    }
+
+    pub fn take_launch(&mut self) -> Option<String> {
+        self.pending_launch.take()
     }
 }

@@ -90,6 +90,9 @@ impl Compositor {
             PixelFormat::BltOnly => Fmt::BltOnly,
         };
         let fb = gop.frame_buffer().as_mut_ptr();
+        crate::live::init(fb, stride, match fmt {
+            Fmt::Rgb => 0, Fmt::Bgr => 1, _ => 1,
+        });
         let screen = Rect::new(0, 0, w as i32, h as i32);
         Self {
             screen,

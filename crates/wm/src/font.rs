@@ -10,7 +10,7 @@ pub const SCALE: usize = 2;
 pub const CELL_W: usize = GLYPH_W * SCALE;
 pub const CELL_H: usize = GLYPH_H * SCALE;
 
-fn glyph(ch: char) -> Option<[u8; 8]> {
+pub fn glyph(ch: char) -> Option<[u8; 8]> {
     font8x8::BASIC_FONTS.get(ch)
 }
 

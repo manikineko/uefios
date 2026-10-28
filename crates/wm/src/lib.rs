@@ -17,6 +17,7 @@ pub mod cursor;
 pub mod font;
 pub mod geom;
 pub mod input;
+pub mod live;
 pub mod surface;
 pub mod window;
 
