@@ -1,46 +1,44 @@
+//! hv — type-1 hypervisor on Intel VT-x (AMD-V later), modeled on the
+//! MIT-licensed MiniVisor (tandasat/MiniVisorPkg, reference vendored at
+//! userland/minivisor-ref). Runs as part of uefios without ever calling
+//! ExitBootServices: VMXON makes us root, boot services keep running as
+//! the host's "kernel".
+//!
+//! ## Bring-up order (mirrors MiniVisor's design)
+//!
+//! 1. **Detect**: CPUID.1:ECX.VMX + IA32_FEATURE_CONTROL MSR lock bit.
+//! 2. **VMXON region**: 4 KiB page-aligned region per CPU, revision-id
+//!    from IA32_VMX_BASIC MSR (bits 30:0), `vmxon [addr]`.
+//! 3. **EPT**: identity-map guest physical -> host physical for RAM;
+//!    EPT page-table type 6 (WB), walk length 4. Needed so the guest can
+//!    run with its own address space while we intercept.
+//! 4. **VMCS per logical processor**: `vmclear` + `vmptrld`, then fill
+//!    guest/host fields (see `vmcs` module for field encodings).
+//! 5. **vmlaunch**: guest picks up the to-be-virtualized context;
+//!    VMExits land in our handler via host RIP.
+//! 6. **Guests**: uefios framebuffer windows == guest displays; I/O to
+//!    real hardware is either passed through (EPT/MMIO traps) or
+//!    paravirtualized via our console protocol.
+//!
+//! Intel SDM Vol. 3C is authoritative; file names/comments follow
+//! MiniVisor's structure so the vendored C sources map 1:1.
+
 #![no_std]
+extern crate alloc;
 
-//! Type-1 hypervisor running inside the uefios boot-services environment.
-//!
-//! This is what the "containerization that runs multiple operating systems at
-//! once" actually requires on bare metal: hardware virtualization. The host
-//! (uefios) runs in VMX root mode; each guest OS runs non-root in a VMCS with
-//! its own EPT. Each guest's virtual display is composited into a `wm` window.
-//!
-//! Bring-up sequence (mirrors Intel SDM Vol. 3C, chapter 31):
-//! 1. CPUID.1:ECX.VMX[5]            — implemented below
-//! 2. IA32_FEATURE_CONTROL MSR lock bit + VMX-enable outside SMX
-//! 3. CR4.VMXE, allocate VMXON region, `vmxon`
-//! 4. Per-VM: allocate VMCS, `vmptrld`, populate guest/host state + controls,
-//!    `vmlaunch`
-//! 5. EPT for guest physical memory; vmexit handlers for I/O and device
-//!    emulation / paravirt display
-//!
-//! AMD-V (SVM) follows the same structure with VMRUN/VMCB instead.
+pub mod vmcs;
+pub mod ept;
+pub mod cpu;
 
-/// True if the CPU reports Intel VMX support (CPUID.1:ECX bit 5).
-///
-/// This only proves the silicon has VT-x — the firmware may still have it
-/// locked off via `IA32_FEATURE_CONTROL`, which is step 2 of bring-up.
-#[cfg(target_arch = "x86_64")]
-pub fn vmx_supported() -> bool {
-    use core::arch::x86_64::__cpuid;
-    __cpuid(1).ecx & (1 << 5) != 0
+/// CPU virtualization features as reported by CPUID/MSRs.
+pub struct Caps {
+    pub vmx: bool,
+    pub svm: bool,
 }
 
-/// True if the CPU reports AMD SVM support (CPUID.80000001h:ECX bit 2).
-#[cfg(target_arch = "x86_64")]
-pub fn svm_supported() -> bool {
-    use core::arch::x86_64::__cpuid;
-    __cpuid(0x8000_0001).ecx & (1 << 2) != 0
-}
-
-#[cfg(not(target_arch = "x86_64"))]
-pub fn vmx_supported() -> bool {
-    false
-}
-
-#[cfg(not(target_arch = "x86_64"))]
-pub fn svm_supported() -> bool {
-    false
+/// Probe the platform once at boot.
+pub fn probe() -> Caps {
+    let ecx = core::arch::x86_64::__cpuid(1).ecx;
+    let edx = core::arch::x86_64::__cpuid(0x8000_0001).edx;
+    Caps { vmx: ecx & (1 << 5) != 0, svm: edx & (1 << 2) != 0 }
 }
