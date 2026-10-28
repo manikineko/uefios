@@ -25,3 +25,30 @@ pub extern "C" fn handle_vmexit(guest_regs: *mut u64) -> i32 {
     let _ = (reason, guest_regs);
     0
 }
+
+// Host entrypoint installed in HOST_RIP. On VMExit the CPU swaps to host
+// state; this stub pushes the guest's GPRs, calls handle_vmexit, then
+// restores and vmresumes. Mirrors MiniVisor's AsmHostEntrypoint.
+core::arch::global_asm!(
+    ".global uefios_vmexit_entry",
+    "uefios_vmexit_entry:",
+    // Save all 15 GPRs (RIP is in the VMCS, not on stack).
+    "pushq %rax", "pushq %rcx", "pushq %rdx", "pushq %rbx", "pushq %rbp",
+    "pushq %rsi", "pushq %rdi", "pushq %r8", "pushq %r9", "pushq %r10",
+    "pushq %r11", "pushq %r12", "pushq %r13", "pushq %r14", "pushq %r15",
+    "movq %rsp, %rdi",              // arg1 = &guest_regs
+    "subq $0x20, %rsp",
+    "call handle_vmexit",
+    "addq $0x20, %rsp",
+    // Restore and resume the guest.
+    "popq %r15", "popq %r14", "popq %r13", "popq %r12", "popq %r11",
+    "popq %r10", "popq %r9", "popq %r8", "popq %rdi", "popq %rsi",
+    "popq %rbp", "popq %rbx", "popq %rdx", "popq %rcx", "popq %rax",
+    "vmresume",
+    "ud2",                          // unreachable if vmresume faults
+    options(att_syntax),
+);
+extern "C" {
+    /// Symbol for the VMExit entrypoint; pass `as usize as u64` as HOST_RIP.
+    pub fn uefios_vmexit_entry();
+}
