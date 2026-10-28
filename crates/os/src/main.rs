@@ -34,6 +34,7 @@ use wm::{AbsolutePointer, Compositor, Point, Rect, Window};
 
 mod container;
 mod fileman;
+mod hvtest;
 
 use container::Container;
 use fileman::FileManager;
@@ -530,6 +531,14 @@ fn main() -> Status {
                     ShellAction::Reboot => {
 
                         uefi::runtime::reset(uefi::runtime::ResetType::COLD, Status::SUCCESS, None)
+
+                    }
+
+                    ShellAction::HvTest => {
+
+                        let r = hvtest::run();
+
+                        shell.output(&r);
 
                     }
 

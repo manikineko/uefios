@@ -58,3 +58,19 @@
 - File manager + .efi launch verified live: keys navigate, click focuses
   (taskbar shows focused title), Enter on HELLO.EFI ran the guest via
   LoadImage/StartImage and returned to the desktop.
+
+## Session 5 additions (hv launch-complete, UNTESTED on TCG)
+
+- hv is now a complete bring-up (MiniVisor model): private GDT+TSS+IDT,
+  full host/guest VMCS fields, EPT identity map, MSR bitmap, VM-exit
+  dispatcher (CPUID/VMCALL/MSR/CR/XSETBV/NMI), asm launch-resume-leave
+  stubs. `hvtest` shell cmd runs the asm smoke guest.
+- x86_64-unknown-uefi uses MS x64 ABI: handler arg in RCX + 32B shadow
+  space; callee-saved = rbp,rbx,rdi,rsi,r12-r15 (NOT SysV!).
+- LAR->VMCS access rights = (lar >> 8) & 0xF0FF (access byte at [15:8],
+  flags nibble at [23:20]).
+- VMX still can't run on this host (QEMU/TCG has no VT-x); verify with
+  `hvtest` on baremetal or Linux/KVM.
+- uefios.ps1 test resolves rustc -vV host = msvc which may lack the
+  target; working invocation:
+  `cargo +stable-x86_64-pc-windows-gnu test --target x86_64-pc-windows-gnu -p shell`

@@ -48,6 +48,7 @@ pub enum Builtin {
     Clear,
     EfiInfo,
     Exit,
+    HvTest,
 }
 
 /// Resolve a command name to a builtin, if one exists.
@@ -59,6 +60,7 @@ pub fn builtin(name: &str) -> Option<Builtin> {
         "clear" | "cls" => Builtin::Clear,
         "efiinfo" => Builtin::EfiInfo,
         "exit" | "quit" => Builtin::Exit,
+        "hvtest" => Builtin::HvTest,
         _ => return None,
     })
 }
@@ -79,6 +81,9 @@ pub enum ShellAction {
     None,
     Clear,
     Reboot,
+    /// Caller should run the VT-x smoke test (`hv::launch`) and feed the
+    /// result back through [`Shell::output`].
+    HvTest,
 }
 
 /// Stateful shell: scrollback + edit line + history.
@@ -160,6 +165,13 @@ impl Shell {
         }
     }
 
+    /// Append externally-produced output (e.g. an `ShellAction`'s result)
+    /// to the scrollback and bump the revision.
+    pub fn output(&mut self, s: &str) {
+        self.revision += 1;
+        self.print(s);
+    }
+
     /// Lines to display: scrollback tail + the live prompt line.
     pub fn render(&self, rows: usize, dst: &mut Vec<String>) {
         dst.clear();
@@ -176,7 +188,7 @@ impl Shell {
         let name = parsed.name().unwrap_or("");
         match builtin(name) {
             Some(Builtin::Help) => self.print(
-                "commands: help ? ver uname clear efiinfo echo exit\n\
+                "commands: help ? ver uname clear efiinfo echo hvtest exit\n\
                  built-ins only for now -- userland lands in phase 4",
             ),
             Some(Builtin::Version) => self.print(&format!(
@@ -189,6 +201,7 @@ impl Shell {
             Some(Builtin::Exit) => {
                 self.print("(the shell runs inside a window -- close it with the X button)")
             }
+            Some(Builtin::HvTest) => return ShellAction::HvTest,
             None if name == "echo" => {
                 let text = parsed.argv[1..].join(" ");
                 self.print(&text);
