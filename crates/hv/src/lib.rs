@@ -31,6 +31,8 @@ pub mod vmcs;
 pub mod ept;
 pub mod cpu;
 pub mod host;
+pub mod guest;
+pub mod exit;
 
 /// CPU virtualization features as reported by CPUID/MSRs.
 pub struct Caps {
