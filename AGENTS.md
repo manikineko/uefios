@@ -41,3 +41,20 @@
   use QMP input-send-event or a real VNC client to verify input.
 - userland/freebsd-src: sparse clone of freebsd bin/sh; PORTING.md
   documents the no-fork port design (LoadImage/StartImage process model).
+
+## Session 3 additions (input + loader verified)
+
+- Input requires `-device virtio-keyboard-pci -device virtio-tablet-pci`:
+  this OVMF build has NO PS/2 mouse driver, and its PS/2 kbd path doesn't
+  feed ConIn reliably. VirtioInputDxe produces SimpleTextInput + an
+  AbsolutePointer — verified working via QMP `input-send-event`.
+- qemu-qmp.py: input-send-event client (type/key/abs/rel/btn) — works
+  headless; HMP sendkey does NOT inject reliably.
+- Never use `boot::stall` in the event loop: OVMF's Stall spins on the
+  ACPI PM timer which doesn't advance under TCG -> freezes. Use a spin
+  loop for frame pacing.
+- usb-tablet's AbsolutePointer::get_state BLOCKS in a URB poll — don't
+  use it; virtio-tablet's is event-driven and safe.
+- File manager + .efi launch verified live: keys navigate, click focuses
+  (taskbar shows focused title), Enter on HELLO.EFI ran the guest via
+  LoadImage/StartImage and returned to the desktop.

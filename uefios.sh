@@ -107,7 +107,7 @@ task_run() {
         -drive "if=pflash,format=raw,readonly=on,file=$code" \
         -drive "if=pflash,format=raw,file=$vars" \
         -drive "format=raw,file=fat:rw:$ROOT/esp" \
-        -device qemu-xhci -usb -device usb-tablet \
+        -device virtio-keyboard-pci -device virtio-tablet-pci \
         -net none \
         -serial stdio
 }

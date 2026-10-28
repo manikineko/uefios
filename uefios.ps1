@@ -123,7 +123,7 @@ function Task-Run {
         -drive "if=pflash,format=raw,readonly=on,file=$code" `
         -drive "if=pflash,format=raw,file=$vars" `
         -drive "format=raw,file=fat:rw:$Root\esp" `
-        -device qemu-xhci -usb -device usb-tablet `
+        -device virtio-keyboard-pci -device virtio-tablet-pci `
         -net none `
         -serial stdio
 }
